@@ -1,0 +1,131 @@
+; -----------------------------------------------------------------------------
+
+        list		p=PIC18F45K22
+        #include	"p18f45k22.inc"
+
+;========== Configuration bits ==========
+; CONFIG1H
+  CONFIG  FOSC = INTIO67        ; Oscillator Selection bits (Internal oscillator block)
+  CONFIG  PLLCFG = OFF          ; 4X PLL Enable (Oscillator used directly)
+  CONFIG  PRICLKEN = ON         ; Primary clock enable bit (Primary clock is always enabled)
+  CONFIG  FCMEN = OFF           ; Fail-Safe Clock Monitor Enable bit (Fail-Safe Clock Monitor disabled)
+  CONFIG  IESO = OFF            ; Internal/External Oscillator Switchover bit (Oscillator Switchover mode disabled)
+
+; CONFIG2L
+  CONFIG  PWRTEN = OFF          ; Power-up Timer Enable bit (Power up timer disabled)
+  CONFIG  BOREN = SBORDIS       ; Brown-out Reset Enable bits (Brown-out Reset enabled in hardware only (SBOREN is disabled))
+  CONFIG  BORV = 190            ; Brown Out Reset Voltage bits (VBOR set to 1.90 V nominal)
+
+; CONFIG2H
+  CONFIG  WDTEN = OFF           ; Watchdog Timer Enable bits (Watch dog timer is always disabled. SWDTEN has no effect.)
+  CONFIG  WDTPS = 32768         ; Watchdog Timer Postscale Select bits (1:32768)
+
+; CONFIG3H
+  CONFIG  CCP2MX = PORTC1       ; CCP2 MUX bit (CCP2 input/output is multiplexed with RC1)
+  CONFIG  PBADEN = ON           ; PORTB A/D Enable bit (PORTB<5:0> pins are configured as analog input channels on Reset)
+  CONFIG  CCP3MX = PORTB5       ; P3A/CCP3 Mux bit (P3A/CCP3 input/output is multiplexed with RB5)
+  CONFIG  HFOFST = ON           ; HFINTOSC Fast Start-up (HFINTOSC output and ready status are not delayed by the oscillator stable status)
+  CONFIG  T3CMX = PORTC0        ; Timer3 Clock input mux bit (T3CKI is on RC0)
+  CONFIG  P2BMX = PORTD2        ; ECCP2 B output mux bit (P2B is on RD2)
+  CONFIG  MCLRE = EXTMCLR       ; MCLR Pin Enable bit (MCLR pin enabled, RE3 input pin disabled)
+
+; CONFIG4L
+  CONFIG  STVREN = ON           ; Stack Full/Underflow Reset Enable bit (Stack full/underflow will cause Reset)
+  CONFIG  LVP = ON              ; Single-Supply ICSP Enable bit (Single-Supply ICSP enabled if MCLRE is also 1)
+  CONFIG  XINST = OFF           ; Extended Instruction Set Enable bit (Instruction set extension and Indexed Addressing mode disabled (Legacy mode))
+
+; CONFIG5L
+  CONFIG  CP0 = OFF             ; Code Protection Block 0 (Block 0 (000800-001FFFh) not code-protected)
+  CONFIG  CP1 = OFF             ; Code Protection Block 1 (Block 1 (002000-003FFFh) not code-protected)
+  CONFIG  CP2 = OFF             ; Code Protection Block 2 (Block 2 (004000-005FFFh) not code-protected)
+  CONFIG  CP3 = OFF             ; Code Protection Block 3 (Block 3 (006000-007FFFh) not code-protected)
+
+; CONFIG5H
+  CONFIG  CPB = OFF             ; Boot Block Code Protection bit (Boot block (000000-0007FFh) not code-protected)
+  CONFIG  CPD = OFF             ; Data EEPROM Code Protection bit (Data EEPROM not code-protected)
+
+; CONFIG6L
+  CONFIG  WRT0 = OFF            ; Write Protection Block 0 (Block 0 (000800-001FFFh) not write-protected)
+  CONFIG  WRT1 = OFF            ; Write Protection Block 1 (Block 1 (002000-003FFFh) not write-protected)
+  CONFIG  WRT2 = OFF            ; Write Protection Block 2 (Block 2 (004000-005FFFh) not write-protected)
+  CONFIG  WRT3 = OFF            ; Write Protection Block 3 (Block 3 (006000-007FFFh) not write-protected)
+
+; CONFIG6H
+  CONFIG  WRTC = OFF            ; Configuration Register Write Protection bit (Configuration registers (300000-3000FFh) not write-protected)
+  CONFIG  WRTB = OFF            ; Boot Block Write Protection bit (Boot Block (000000-0007FFh) not write-protected)
+  CONFIG  WRTD = OFF            ; Data EEPROM Write Protection bit (Data EEPROM not write-protected)
+
+; CONFIG7L
+  CONFIG  EBTR0 = OFF           ; Table Read Protection Block 0 (Block 0 (000800-001FFFh) not protected from table reads executed in other blocks)
+  CONFIG  EBTR1 = OFF           ; Table Read Protection Block 1 (Block 1 (002000-003FFFh) not protected from table reads executed in other blocks)
+  CONFIG  EBTR2 = OFF           ; Table Read Protection Block 2 (Block 2 (004000-005FFFh) not protected from table reads executed in other blocks)
+  CONFIG  EBTR3 = OFF           ; Table Read Protection Block 3 (Block 3 (006000-007FFFh) not protected from table reads executed in other blocks)
+
+; CONFIG7H
+  CONFIG  EBTRB = OFF           ; Boot Block Table Read Protection bit (Boot Block (000000-0007FFh) not protected from table reads executed in other blocks)
+   
+;========== Definition of variables ==========
+        cblock 0x00
+            Breath_Period		;0x00
+	    
+        endc
+
+        org 0x00
+	goto INIT
+	org 0x08
+	goto ISR
+	
+
+INIT 
+	; Set oscillator speed at 4 MHz
+	bsf 	OSCCON,IRCF0
+	bcf	OSCCON,IRCF1
+	bsf	OSCCON,IRCF2
+	
+
+	;TIMER 4 INIT for taking breathing period
+	BSF	INTCON,PEIE		; Peripheral interrupt enable
+	BSF	INTCON,GIE		; global interrupt enable
+	BSF	PIE5,TMR4IE		; timer4 interrupt enable
+	CLRF	TMR4			; Clear the timer of the few counts that accumulated since the previous roll-over.
+	SETF	PR4			;set period reg for tmr4 255
+	movlw	b'01001011'		; 16pre,10post
+	movwf	T4CON
+	
+	;-----------------------------------------------------------------------
+	;INIT VAR
+	MOVLB	0x0
+	CLRF	Breath_Period
+	
+;-------------------------------------------------------------------------------
+
+	
+Breath_sense
+	MOVLB	0xF
+	BSF	T4CON,TMR4ON		; Start the counter for first breath
+	MOVLB	0x0
+	goto $
+
+;-------------------------------------------------------------------------------
+ISR
+	BTFSC	PIR5,TMR4IF
+	GOTO	ISR_Timer4
+	RETFIE
+	
+ISR_Timer4
+	
+	INCF	Breath_Period
+	BCF	PIR5,TMR4IF
+	RETFIE
+	
+	end
+	
+;hierdie is wanneer jy die timer clear	tussen breaths
+;CLRF	BreathingPeriod
+;CLRF	TMR4
+
+
+
+
+
+
